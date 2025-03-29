@@ -4,10 +4,46 @@ import mysql.connector
 import plotly.express as px
 import re  
 
+# ✅ Page Navigation
+st.sidebar.title("🎬 IMDb Dashboard")
+page = st.sidebar.radio("Go to", ["Movie Explorer", "Advanced Insights"])
+
+st.markdown("""
+    <style>
+        /* Background color */
+        .stApp {
+            background-color: #1D3557;
+        }
+
+        /* Sidebar design */
+        .css-1d391kg {
+            background-color: #457B9D !important;
+        }
+
+        /* Change text color */
+        h1, h2, h3, h4, h5, h6, p, .stTextInput, .stSelectbox {
+            color: #F1FAEE !important;
+        }
+
+        /* Buttons */
+        .stButton>button {
+            background-color: #E63946 !important;
+            color: white !important;
+            border-radius: 10px !important;
+        }
+
+        /* Dataframe styling */
+        .dataframe {
+            color: white !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+
 # ✅ Convert "53K" → 53000, "1.2M" → 1200000
 def convert_votes(value):
     if isinstance(value, str):
-        value = value.lower().replace(",", "")  # Remove commas
+        value = value.lower().replace(",", "")  
         if "k" in value:
             return int(float(value.replace("k", "")) * 1000)
         elif "m" in value:
@@ -16,6 +52,7 @@ def convert_votes(value):
         return int(value)
     except ValueError:
         return 0  
+
 
 # ✅ Convert "2h 3m" → 2.05 Hours
 def convert_duration(duration):
@@ -27,6 +64,7 @@ def convert_duration(duration):
         minutes = int(minutes_match.group(1)) if minutes_match else 0
         return round(hours + (minutes / 60), 2)  
     return 0  
+
 
 # ✅ Fetch Movie Data
 def get_movie_data():
@@ -63,23 +101,25 @@ def get_movie_data():
 
 df = get_movie_data()
 
-if df.empty:
-    st.error("❌ No data available. Please check the database connection.")
-else:
-    st.title("🎬 IMDb Movie Explorer")
 
-    st.sidebar.header("🔍 Search for a Movie")
-    movie_list = [""] + df["title"].unique().tolist()
-    selected_movie = st.sidebar.selectbox("Select movie...", movie_list)
+# ✅ PAGE 1: MOVIE EXPLORER
+if page == "Movie Explorer":
+    st.markdown("<h1 style='text-align: center; color: #F1FAEE;'>🎬 IMDb Movie Explorer</h1>", unsafe_allow_html=True)
 
-    st.sidebar.header("🔧 Filters")
-
-    if selected_movie:
-        searched_df = df[df["title"] == selected_movie]  
+    if df.empty:
+        st.error("❌ No data available. Please check the database connection.")
     else:
-        searched_df = df.copy()
+        st.sidebar.header("🔍 Search for a Movie")
+        movie_list = [""] + df["title"].unique().tolist()
+        selected_movie = st.sidebar.selectbox("Select movie...", movie_list)
 
-        if not selected_movie:
+        st.sidebar.header("🔧 Filters")
+
+        if selected_movie:
+            searched_df = df[df["title"] == selected_movie]  
+        else:
+            searched_df = df.copy()
+
             duration_filter = st.sidebar.radio("⏳ Duration (Hrs)", ["All", "< 2 Hrs", "2-3 Hrs", "> 3 Hrs"])
             if duration_filter == "< 2 Hrs":
                 searched_df = searched_df[searched_df["duration"] < 2.0]
@@ -88,44 +128,46 @@ else:
             elif duration_filter == "> 3 Hrs":
                 searched_df = searched_df[searched_df["duration"] > 3.0]
 
-        if not selected_movie:
             min_rating = st.sidebar.slider("⭐ Minimum IMDb Rating", 0.0, 10.0, 8.0, 0.1)
             searched_df = searched_df[searched_df["rating"] >= min_rating]
 
-        if not selected_movie and not searched_df.empty:
             min_votes = st.sidebar.slider("🔢 Minimum Votes", int(searched_df["voting"].min()), int(searched_df["voting"].max()), 5000)
             searched_df = searched_df[searched_df["voting"] >= min_votes]
 
-        if not selected_movie and "genre" in searched_df.columns and not searched_df.empty:
             genres = searched_df["genre"].unique()
             selected_genre = st.sidebar.multiselect("🎭 Select Genre(s)", genres, default=genres)
             searched_df = searched_df[searched_df["genre"].isin(selected_genre)]
 
-    st.write(f"### Filtered Movies ({len(searched_df)} results)")
-    st.dataframe(searched_df)
+        st.write(f"### Filtered Movies ({len(searched_df)} results)")
+        st.dataframe(searched_df)
 
-    if not searched_df.empty:
-        st.subheader("📊 Movie Insights")
+# ✅ PAGE 2: ADVANCED INSIGHTS
+elif page == "Advanced Insights":
+    st.markdown("<h1 style='text-align: center; color: #F1FAEE;'>📊 Advanced Movie Insights</h1>", unsafe_allow_html=True)
 
-        if "genre" in searched_df.columns:
-            genre_counts = searched_df["genre"].value_counts().reset_index()
-            genre_counts.columns = ["Genre", "Count"]
-            fig_genre = px.bar(genre_counts, x="Genre", y="Count", title="🎭 Movies per Genre", color="Genre")
-            st.plotly_chart(fig_genre, use_container_width=True)
+    if df.empty:
+        st.error("❌ No data available.")
+    else:
+        st.subheader("🏆 Top 10 Movies by Rating & Votes")
+        top_movies = df.sort_values(["rating", "voting"], ascending=[False, False]).head(10)
+        st.dataframe(top_movies)
 
-        fig_ratings = px.histogram(searched_df, x="rating", nbins=20, title="⭐ IMDb Ratings Distribution", color_discrete_sequence=["#FF5733"])
-        st.plotly_chart(fig_ratings, use_container_width=True)
+        st.subheader("🎭 Genre Distribution")
+        genre_counts = df["genre"].value_counts().reset_index()
+        genre_counts.columns = ["Genre", "Count"]
+        fig_genre = px.bar(genre_counts, x="Genre", y="Count", color="Genre", title="Movies per Genre")
+        st.plotly_chart(fig_genre, use_container_width=True)
 
-        # ✅ **Updated Pie Chart Based on Filtered Genre**
-        genre_filtered_counts = searched_df["genre"].value_counts().reset_index()
-        genre_filtered_counts.columns = ["Genre", "Count"]
+        st.subheader("⏳ Average Duration by Genre")
+        avg_duration = df.groupby("genre")["duration"].mean().reset_index()
+        fig_duration = px.bar(avg_duration, x="duration", y="genre", orientation="h", title="Average Duration by Genre")
+        st.plotly_chart(fig_duration, use_container_width=True)
 
-        if not genre_filtered_counts.empty:
-            fig_genre_pie = px.pie(genre_filtered_counts, names="Genre", values="Count", title="🎭 Genre Distribution in Filtered Results")
-            st.plotly_chart(fig_genre_pie, use_container_width=True)
-
-        fig_votes = px.scatter(searched_df, x="voting", y="rating", size="voting", title="🔢 Votes vs Ratings", color="rating", hover_name="title")
+        st.subheader("🔢 Voting Trends by Genre")
+        avg_votes = df.groupby("genre")["voting"].mean().reset_index()
+        fig_votes = px.bar(avg_votes, x="genre", y="voting", title="Average Voting by Genre", color="voting")
         st.plotly_chart(fig_votes, use_container_width=True)
 
-    else:
-        st.warning("⚠️ No movies match the selected filters. Try adjusting them.")
+        st.subheader("📊 Correlation: Ratings vs Votes")
+        fig_corr = px.scatter(df, x="voting", y="rating", title="Ratings vs Voting", color="rating", hover_name="title")
+        st.plotly_chart(fig_corr, use_container_width=True)
